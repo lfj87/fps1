@@ -14,6 +14,49 @@ player = FirstPersonController(speed=12, position=(0, 2, 0))
 # 枪
 gun = Entity(parent=camera.ui, model='cube', color=color.black, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0))
 
+# 子弹列表
+bullets = []
+BULLET_SPEED = 50  # 子弹速度
+
+class Bullet(Entity):
+    def __init__(self, position, direction, **kwargs):
+        super().__init__(
+            model='sphere',
+            color=color.yellow,
+            scale=0.2,
+            position=position,
+            **kwargs
+        )
+        self.direction = direction.normalized()
+        self.speed = BULLET_SPEED
+        self.lifetime = 3  # 子弹存活时间（秒）
+        
+    def update(self):
+        # 子弹向前飞行
+        self.position += self.direction * self.speed * time.dt
+        self.lifetime -= time.dt
+        
+        # 碰撞检测
+        hit_info = self.intersects()
+        if hit_info.hit:
+            if hit_info.entity in targets:
+                # 击中靶子
+                destroy(hit_info.entity)
+                targets.remove(hit_info.entity)
+                print(f"命中！剩余靶子：{len(targets)}")
+                # 生成新靶子
+                create_target()
+            # 子弹消失
+            destroy(self)
+            bullets.remove(self)
+            return
+        
+        # 超时销毁
+        if self.lifetime <= 0:
+            destroy(self)
+            if self in bullets:
+                bullets.remove(self)
+
 # 靶子列表
 targets = []
 
@@ -35,17 +78,13 @@ def input(key):
         gun.animate_position((0.5, -0.35), duration=0.05, curve=curve.linear)
         gun.animate_position((0.5, -0.4), duration=0.1, curve=curve.linear)
         
-        # 射线检测
-        hit_info = raycast(camera.world_position, camera.forward, distance=100)
-        if hit_info.hit:
-            if hit_info.entity in targets:
-                # 击中靶子
-                destroy(hit_info.entity)
-                targets.remove(hit_info.entity)
-                print(f"命中！剩余靶子：{len(targets)}")
-                
-                # 生成新靶子
-                create_target()
+        # 创建子弹（从枪口位置发射）
+        bullet_pos = camera.world_position + camera.forward * 2
+        bullet = Bullet(position=bullet_pos, direction=camera.forward)
+        bullets.append(bullet)
+        
+        # 播放射击音效（可选）
+        # Audio('assets/shoot.wav', autoplay=True)
 
 # 运行
 app.run()
