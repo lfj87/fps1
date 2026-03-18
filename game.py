@@ -49,24 +49,24 @@ hint_text = Text(text='点击"开始游戏"按钮开始', position=(0, -0.45), s
 Sky(enabled=False)
 ground = Entity(model='plane', scale=(100, 1, 100), color=color.gray, texture='white_cube', texture_scale=(100, 100), collider='box', enabled=False)
 
-# 玩家（FPS 控制器）
-player = FirstPersonController(enabled=False)
+# 玩家（FPS 控制器）- 速度保持 12 不变
+player = FirstPersonController(enabled=False, speed=12)
 
-# 枪
-gun = Entity(parent=camera.ui, model='cube', color=color.black, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0), enabled=False)
+# 枪 - 使用更精细的模型
+gun = Entity(parent=camera.ui, model='cube', color=color.dark_gray, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0), enabled=False)
+
+# 子弹列表
+bullets = []
+BULLET_SPEED = 500  # 子弹速度
 
 # 弹药系统
 MAG_SIZE = 20  # 弹夹容量
 bullets_in_mag = MAG_SIZE  # 当前子弹数
 is_reloading = False  # 是否正在换弹
 
-# 弹药显示
-ammo_text = Text(text=f'弹药：{bullets_in_mag}/{MAG_SIZE}', position=(-0.85, 0.45), scale=2, color=color.white, enabled=False)
+# 弹药显示 - 左下角
+ammo_text = Text(text=f'弹药：{bullets_in_mag}/{MAG_SIZE}', position=(-0.85, -0.45), scale=2, color=color.white, enabled=False)
 reload_text = Text(text='按 R 换弹', position=(0, 0), scale=3, color=color.red, origin=(0, 0), enabled=False)
-
-# 子弹列表
-bullets = []
-BULLET_SPEED = 500  # 子弹速度
 
 def get_muzzle_position():
     """获取枪口的世界坐标位置"""
@@ -124,14 +124,16 @@ MOVE_RANGE_X = 40
 MOVE_RANGE_Z = 40
 
 class MovingTarget(Entity):
-    """可移动的靶子"""
+    """可移动的靶子 - 使用圆形靶子模型"""
     def __init__(self, position, size, **kwargs):
+        # 使用圆柱体模拟靶子，更有真实感
         super().__init__(
-            model='cube',
-            color=color.red,
-            scale=(size, size, 0.2),
+            model='cylinder',  # 圆柱体比立方体更像靶子
+            color=color.rgb(200, 50, 50),  # 更鲜艳的红色
+            scale=(size, size * 0.1, size),  # 扁平的圆柱体
             position=position,
             collider='box',
+            texture='white_cube',
             **kwargs
         )
         self.size = size
@@ -139,6 +141,9 @@ class MovingTarget(Entity):
         self.move_speed = uniform(TARGET_SPEED_MIN, TARGET_SPEED_MAX)
         self.x_range = (-MOVE_RANGE_X, MOVE_RANGE_X)
         self.z_range = (-MOVE_RANGE_Z, MOVE_RANGE_Z)
+        
+        # 靶子中心白点（模拟靶心）
+        self.bullseye = Entity(parent=self, model='quad', color=color.white, scale=(0.3, 0.3), position=(0, 0, 0.51))
         
     def update(self):
         self.position += self.move_direction * self.move_speed * time.dt
