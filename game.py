@@ -14,30 +14,44 @@ player = FirstPersonController(speed=12, position=(0, 2, 0))
 # 枪
 gun = Entity(parent=camera.ui, model='cube', color=color.black, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0))
 
+# 弹药系统
+MAG_SIZE = 20  # 弹夹容量
+bullets_in_mag = MAG_SIZE  # 当前子弹数
+is_reloading = False  # 是否正在换弹
+
+# 弹药显示
+ammo_text = Text(text=f'弹药：{bullets_in_mag}/{MAG_SIZE}', position=(-0.85, 0.45), scale=2, color=color.white)
+reload_text = Text(text='按 R 换弹', position=(0, 0), scale=3, color=color.red, origin=(0, 0))
+reload_text.enabled = False
+
 # 子弹列表
 bullets = []
-BULLET_SPEED = 50  # 子弹速度
+BULLET_SPEED = 500  # 子弹速度（原速度 10 倍）
 
 class Bullet(Entity):
     def __init__(self, position, direction, **kwargs):
         super().__init__(
             model='sphere',
             color=color.yellow,
-            scale=0.2,
+            scale=0.15,
             position=position,
             **kwargs
         )
         self.direction = direction.normalized()
         self.speed = BULLET_SPEED
-        self.lifetime = 3  # 子弹存活时间（秒）
+        self.lifetime = 2  # 子弹存活时间（秒）
         
     def update(self):
         # 子弹向前飞行
         self.position += self.direction * self.speed * time.dt
         self.lifetime -= time.dt
         
-        # 碰撞检测
-        hit_info = self.intersects()
+        # 碰撞检测 - 使用 raycast 从上一帧位置到当前位置
+        hit_info = raycast(self.position - self.direction * self.speed * time.dt, 
+                          self.direction, 
+                          distance=self.speed * time.dt, 
+                          ignore=[player, gun, self])
+        
         if hit_info.hit:
             if hit_info.entity in targets:
                 # 击中靶子
@@ -48,7 +62,8 @@ class Bullet(Entity):
                 create_target()
             # 子弹消失
             destroy(self)
-            bullets.remove(self)
+            if self in bullets:
+                bullets.remove(self)
             return
         
         # 超时销毁
@@ -71,9 +86,61 @@ def create_target():
 for _ in range(5):
     create_target()
 
+def reload():
+    """换弹夹"""
+    global bullets_in_mag, is_reloading
+    
+    if is_reloading:
+        return
+    
+    if bullets_in_mag == MAG_SIZE:
+        return  # 弹夹已满
+    
+    is_reloading = True
+    reload_text.enabled = True
+    
+    # 换弹动画 - 枪口向下
+    gun.animate_rotation((-45, -5, 0), duration=0.5, curve=curve.linear)
+    
+    # 1.5 秒后换弹完成
+    invoke(finish_reload, delay=1.5)
+
+def finish_reload():
+    """完成换弹"""
+    global bullets_in_mag, is_reloading
+    
+    bullets_in_mag = MAG_SIZE
+    is_reloading = False
+    reload_text.enabled = False
+    
+    # 枪口恢复
+    gun.animate_rotation((-5, -5, 0), duration=0.3, curve=curve.linear)
+    
+    # 更新弹药显示
+    ammo_text.text = f'弹药：{bullets_in_mag}/{MAG_SIZE}'
+
 # 射击逻辑
 def input(key):
+    global bullets_in_mag
+    
+    if key == 'r':
+        reload()
+        return
+    
     if key == 'left mouse down':
+        if is_reloading:
+            return  # 换弹中不能射击
+        
+        if bullets_in_mag <= 0:
+            # 空弹夹提示
+            ammo_text.color = color.red
+            invoke(setattr, ammo_text, 'color', color.white, delay=0.3)
+            return
+        
+        # 消耗子弹
+        bullets_in_mag -= 1
+        ammo_text.text = f'弹药：{bullets_in_mag}/{MAG_SIZE}'
+        
         # 枪口后坐力动画
         gun.animate_position((0.5, -0.35), duration=0.05, curve=curve.linear)
         gun.animate_position((0.5, -0.4), duration=0.1, curve=curve.linear)
@@ -82,9 +149,6 @@ def input(key):
         bullet_pos = camera.world_position + camera.forward * 2
         bullet = Bullet(position=bullet_pos, direction=camera.forward)
         bullets.append(bullet)
-        
-        # 播放射击音效（可选）
-        # Audio('assets/shoot.wav', autoplay=True)
 
 # 运行
 app.run()
