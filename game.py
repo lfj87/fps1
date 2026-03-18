@@ -1,6 +1,6 @@
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
-from random import randint
+from random import randint, uniform
 
 app = Ursina()
 
@@ -33,15 +33,7 @@ BULLET_SPEED = 500  # 子弹速度（原速度 10 倍）
 
 def get_muzzle_position():
     """获取枪口的世界坐标位置"""
-    # 枪在屏幕坐标系中的位置
-    # camera.ui 是 2D 界面，需要转换到 3D 世界坐标
-    # 从摄像机位置向前延伸，加上枪的偏移
-    
-    # 枪口相对于摄像机的位置
-    gun_offset = Vec3(0.5, -0.3, 0)  # 枪口在屏幕中的位置
-    
     # 从摄像机世界位置发射
-    # 枪口实际位置 = 摄像机位置 + 摄像机前方 1 米处 + 枪的横向偏移
     muzzle_world_pos = camera.world_position + camera.forward * 1.5
     
     # 加上枪的横向偏移（右下方）
@@ -98,11 +90,66 @@ class Bullet(Entity):
 # 靶子列表
 targets = []
 
+# 靶子大小范围
+TARGET_SIZE_MIN = 1.0   # 最小边长
+TARGET_SIZE_MAX = 3.0   # 最大边长
+
+# 靶子移动速度范围
+TARGET_SPEED_MIN = 2    # 最小速度
+TARGET_SPEED_MAX = 8    # 最大速度
+
+# 靶子移动范围
+MOVE_RANGE_X = 40       # X 轴移动范围 ±40
+MOVE_RANGE_Z = 40       # Z 轴移动范围 ±40
+
+class MovingTarget(Entity):
+    """可移动的靶子"""
+    def __init__(self, position, size, **kwargs):
+        super().__init__(
+            model='cube',
+            color=color.red,
+            scale=(size, size, 0.2),
+            position=position,
+            collider='box',
+            **kwargs
+        )
+        self.size = size
+        # 随机移动方向
+        self.move_direction = Vec3(
+            randint(-1, 1),
+            0,
+            randint(-1, 1)
+        ).normalized()
+        # 随机移动速度
+        self.move_speed = uniform(TARGET_SPEED_MIN, TARGET_SPEED_MAX)
+        # 移动范围限制
+        self.x_range = (-MOVE_RANGE_X, MOVE_RANGE_X)
+        self.z_range = (-MOVE_RANGE_Z, MOVE_RANGE_Z)
+        
+    def update(self):
+        # 移动靶子
+        self.position += self.move_direction * self.move_speed * time.dt
+        
+        # 边界检测 - 碰到边界就反向
+        if self.position.x < self.x_range[0] or self.position.x > self.x_range[1]:
+            self.move_direction = Vec3(-self.move_direction.x, 0, self.move_direction.z)
+            self.position.x = max(self.x_range[0], min(self.position.x, self.x_range[1]))
+        
+        if self.position.z < self.z_range[0] or self.position.z > self.z_range[1]:
+            self.move_direction = Vec3(self.move_direction.x, 0, -self.move_direction.z)
+            self.position.z = max(self.z_range[0], min(self.position.z, self.z_range[1]))
+
 def create_target():
-    """随机位置生成靶子"""
-    x = randint(-40, 40)
-    z = randint(-40, 40)
-    target = Entity(model='cube', color=color.red, scale=(2, 2, 0.2), position=(x, 1, z), collider='box')
+    """随机位置、随机大小生成移动靶子"""
+    # 随机位置
+    x = randint(-MOVE_RANGE_X, MOVE_RANGE_X)
+    z = randint(-MOVE_RANGE_Z, MOVE_RANGE_Z)
+    
+    # 随机大小（1.0 - 3.0 之间）
+    size = uniform(TARGET_SIZE_MIN, TARGET_SIZE_MAX)
+    
+    # 创建移动靶子
+    target = MovingTarget(position=(x, 1, z), size=size)
     targets.append(target)
 
 # 生成 5 个靶子
@@ -174,10 +221,6 @@ def input(key):
         # 创建子弹（从枪口位置发射）
         bullet = Bullet(position=muzzle_pos, direction=camera.forward)
         bullets.append(bullet)
-        
-        # 枪口火焰效果（可选）
-        # muzzle_flash.enabled = True
-        # invoke(setattr, muzzle_flash, 'enabled', False, delay=0.05)
 
 # 运行
 app.run()
