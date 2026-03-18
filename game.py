@@ -14,6 +14,9 @@ player = FirstPersonController(speed=12, position=(0, 2, 0))
 # 枪
 gun = Entity(parent=camera.ui, model='cube', color=color.black, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0))
 
+# 枪口位置标记（用于计算子弹发射点）
+muzzle_flash = Entity(parent=camera.ui, model='quad', color=color.yellow, scale=0.1, position=(0.5, -0.3, 2), enabled=False)
+
 # 弹药系统
 MAG_SIZE = 20  # 弹夹容量
 bullets_in_mag = MAG_SIZE  # 当前子弹数
@@ -27,6 +30,26 @@ reload_text.enabled = False
 # 子弹列表
 bullets = []
 BULLET_SPEED = 500  # 子弹速度（原速度 10 倍）
+
+def get_muzzle_position():
+    """获取枪口的世界坐标位置"""
+    # 枪在屏幕坐标系中的位置
+    # camera.ui 是 2D 界面，需要转换到 3D 世界坐标
+    # 从摄像机位置向前延伸，加上枪的偏移
+    
+    # 枪口相对于摄像机的位置
+    gun_offset = Vec3(0.5, -0.3, 0)  # 枪口在屏幕中的位置
+    
+    # 从摄像机世界位置发射
+    # 枪口实际位置 = 摄像机位置 + 摄像机前方 1 米处 + 枪的横向偏移
+    muzzle_world_pos = camera.world_position + camera.forward * 1.5
+    
+    # 加上枪的横向偏移（右下方）
+    right = camera.right * 0.3  # 向右偏移
+    down = camera.down * 0.2    # 向下偏移
+    muzzle_world_pos = muzzle_world_pos + right + down
+    
+    return muzzle_world_pos
 
 class Bullet(Entity):
     def __init__(self, position, direction, **kwargs):
@@ -145,10 +168,16 @@ def input(key):
         gun.animate_position((0.5, -0.35), duration=0.05, curve=curve.linear)
         gun.animate_position((0.5, -0.4), duration=0.1, curve=curve.linear)
         
+        # 获取枪口世界位置
+        muzzle_pos = get_muzzle_position()
+        
         # 创建子弹（从枪口位置发射）
-        bullet_pos = camera.world_position + camera.forward * 2
-        bullet = Bullet(position=bullet_pos, direction=camera.forward)
+        bullet = Bullet(position=muzzle_pos, direction=camera.forward)
         bullets.append(bullet)
+        
+        # 枪口火焰效果（可选）
+        # muzzle_flash.enabled = True
+        # invoke(setattr, muzzle_flash, 'enabled', False, delay=0.05)
 
 # 运行
 app.run()
