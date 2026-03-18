@@ -1,6 +1,8 @@
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 from random import randint, uniform
+import urllib.request
+import os
 
 app = Ursina()
 
@@ -47,22 +49,19 @@ hint_text = Text(text='点击"开始游戏"按钮开始', position=(0, -0.45), s
 
 # 天空和地面
 Sky(enabled=False)
-ground = Entity(model='plane', scale=(100, 1, 100), color=color.gray, texture='white_cube', texture_scale=(100, 100), collider='box', enabled=False)
+ground = Entity(model='plane', scale=(100, 1, 100), color=color.rgb(80, 80, 80), texture='white_cube', texture_scale=(100, 100), collider='box', enabled=False)
 
 # 玩家（FPS 控制器）- 速度保持 12 不变
 player = FirstPersonController(enabled=False, speed=12)
-
-# 枪 - 使用更精细的模型
-gun = Entity(parent=camera.ui, model='cube', color=color.dark_gray, scale=(0.4, 0.2, 1), position=(0.5, -0.4), rotation=(-5, -5, 0), enabled=False)
-
-# 子弹列表
-bullets = []
-BULLET_SPEED = 500  # 子弹速度
 
 # 弹药系统
 MAG_SIZE = 20  # 弹夹容量
 bullets_in_mag = MAG_SIZE  # 当前子弹数
 is_reloading = False  # 是否正在换弹
+
+# 子弹列表
+bullets = []
+BULLET_SPEED = 500  # 子弹速度
 
 # 弹药显示 - 左下角
 ammo_text = Text(text=f'弹药：{bullets_in_mag}/{MAG_SIZE}', position=(-0.85, -0.45), scale=2, color=color.white, enabled=False)
@@ -96,12 +95,16 @@ class Bullet(Entity):
         hit_info = raycast(self.position - self.direction * self.speed * time.dt, 
                           self.direction, 
                           distance=self.speed * time.dt, 
-                          ignore=[player, gun, self])
+                          ignore=[player, gun_group, self])
         
         if hit_info.hit:
-            if hit_info.entity in targets:
-                destroy(hit_info.entity)
-                targets.remove(hit_info.entity)
+            if hit_info.entity in targets or hit_info.entity in target_bullseyes:
+                # 找到并销毁靶子
+                for t in targets:
+                    if hit_info.entity == t or hit_info.entity == t.bullseye:
+                        destroy(t)
+                        targets.remove(t)
+                        break
                 # 生成新靶子
                 create_target()
             destroy(self)
@@ -124,16 +127,15 @@ MOVE_RANGE_X = 40
 MOVE_RANGE_Z = 40
 
 class MovingTarget(Entity):
-    """可移动的靶子 - 使用圆形靶子模型"""
+    """可移动的靶子 - 立着的圆形靶子"""
     def __init__(self, position, size, **kwargs):
-        # 使用圆柱体模拟靶子，更有真实感
+        # 创建靶子主体（立着的圆盘）
         super().__init__(
-            model='cylinder',  # 圆柱体比立方体更像靶子
-            color=color.rgb(200, 50, 50),  # 更鲜艳的红色
-            scale=(size, size * 0.1, size),  # 扁平的圆柱体
+            model='circle',  # 2D 圆形
+            color=color.rgb(220, 50, 50),  # 鲜艳的红色
+            scale=(size, size),
             position=position,
             collider='box',
-            texture='white_cube',
             **kwargs
         )
         self.size = size
@@ -142,8 +144,20 @@ class MovingTarget(Entity):
         self.x_range = (-MOVE_RANGE_X, MOVE_RANGE_X)
         self.z_range = (-MOVE_RANGE_Z, MOVE_RANGE_Z)
         
-        # 靶子中心白点（模拟靶心）
-        self.bullseye = Entity(parent=self, model='quad', color=color.white, scale=(0.3, 0.3), position=(0, 0, 0.51))
+        # 靶子支架（柱子）
+        self.stand = Entity(parent=self, model='cube', color=color.rgb(100, 100, 100), 
+                           scale=(0.2, 1, 0.2), position=(0, -0.5 - size/2, 0))
+        
+        # 靶心（白色）
+        self.bullseye = Entity(parent=self, model='circle', color=color.white, 
+                              scale=(size * 0.3, size * 0.3), position=(0, 0, 0.01))
+        
+        # 外圈（白色环）
+        self.outer_ring = Entity(parent=self, model='ring', color=color.white, 
+                                scale=(size * 0.7, size * 0.7), position=(0, 0, 0.02))
+        
+        # 设置 Y 轴旋转，让靶子面向玩家
+        self.look_at(Vec3(0, 1, 0))
         
     def update(self):
         self.position += self.move_direction * self.move_speed * time.dt
@@ -155,6 +169,22 @@ class MovingTarget(Entity):
         if self.position.z < self.z_range[0] or self.position.z > self.z_range[1]:
             self.move_direction = Vec3(self.move_direction.x, 0, -self.move_direction.z)
             self.position.z = max(self.z_range[0], min(self.position.z, self.z_range[1]))
+
+# 枪模型组（用多个形状组合成更像枪的样子）
+gun_group = Entity(parent=camera.ui, enabled=False)
+
+# 枪身主体
+gun_body = Entity(parent=gun_group, model='cube', color=color.rgb(60, 60, 60), 
+                  scale=(0.15, 0.12, 0.8), position=(0.4, -0.35, 0))
+# 枪管
+gun_barrel = Entity(parent=gun_group, model='cube', color=color.rgb(40, 40, 40), 
+                    scale=(0.06, 0.06, 0.4), position=(0.4, -0.32, 0.6))
+# 握把
+gun_grip = Entity(parent=gun_group, model='cube', color=color.rgb(50, 40, 30), 
+                  scale=(0.1, 0.15, 0.12), position=(0.4, -0.48, -0.2))
+# 弹夹
+gun_mag = Entity(parent=gun_group, model='cube', color=color.rgb(30, 30, 30), 
+                 scale=(0.08, 0.2, 0.1), position=(0.4, -0.55, 0.1))
 
 def create_target():
     """随机位置、随机大小生成移动靶子"""
@@ -184,7 +214,7 @@ def start_game():
     Sky(enabled=True)
     ground.enabled = True
     player.enabled = True
-    gun.enabled = True
+    gun_group.enabled = True
     ammo_text.enabled = True
     
     # 重置弹药
@@ -212,7 +242,8 @@ def reload():
     is_reloading = True
     reload_text.enabled = True
     
-    gun.animate_rotation((-45, -5, 0), duration=0.5, curve=curve.linear)
+    # 换弹动画 - 枪口向下
+    gun_group.animate_rotation((-30, 0, 0), duration=0.5, curve=curve.linear)
     invoke(finish_reload, delay=1.5)
 
 def finish_reload():
@@ -223,7 +254,8 @@ def finish_reload():
     is_reloading = False
     reload_text.enabled = False
     
-    gun.animate_rotation((-5, -5, 0), duration=0.3, curve=curve.linear)
+    # 枪口恢复
+    gun_group.animate_rotation((0, 0, 0), duration=0.3, curve=curve.linear)
     ammo_text.text = f'弹药：{bullets_in_mag}/{MAG_SIZE}'
 
 # 输入处理
@@ -249,10 +281,14 @@ def input(key):
         bullets_in_mag -= 1
         ammo_text.text = f'弹药：{bullets_in_mag}/{MAG_SIZE}'
         
-        gun.animate_position((0.5, -0.35), duration=0.05, curve=curve.linear)
-        gun.animate_position((0.5, -0.4), duration=0.1, curve=curve.linear)
+        # 枪口后坐力动画
+        gun_group.animate_position((0.4, -0.3, 0), duration=0.05, curve=curve.linear)
+        gun_group.animate_position((0.4, -0.35, 0), duration=0.1, curve=curve.linear)
         
+        # 获取枪口世界位置
         muzzle_pos = get_muzzle_position()
+        
+        # 创建子弹（从枪口位置发射）
         bullet = Bullet(position=muzzle_pos, direction=camera.forward)
         bullets.append(bullet)
 
